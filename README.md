@@ -3,10 +3,13 @@
 **Build a 24-word Bitcoin seed phrase from entropy you generate yourself, offline.**
 
 Most wallets hand you 24 words and ask you to trust their random number
-generator. This tool lets you supply the randomness — physical dice, keyboard
-timing, mouse movement, your own photographs — and mixes it with your operating
-system's generator so the result is at least as strong as whichever source is
-better.
+generator. That trust has been misplaced before — most recently in COLDCARD
+hardware wallets, which for a period generated seeds with
+[about 72 bits of entropy instead of 128](#why-this-exists), silently and with no
+outward symptom. This tool lets you supply the randomness yourself — physical
+dice, keyboard timing, mouse movement, your own photographs — and mixes it with
+your operating system's generator so the result is at least as strong as
+whichever source is better.
 
 It requires **1024 bits** of collected entropy before it will produce a phrase.
 That is four times the 256 bits the phrase actually carries, which is deliberate:
@@ -48,6 +51,7 @@ cargo build --release
 
 ## Contents
 
+- [Why this exists](#why-this-exists)
 - [Should you use this?](#should-you-use-this)
 - [Using it safely](#using-it-safely)
   - [1. Prepare the machine](#1-prepare-the-machine)
@@ -67,21 +71,89 @@ cargo build --release
 
 ---
 
+## Why this exists
+
+**Bad entropy is not a hypothetical. It ships in real, respected hardware
+wallets, and it fails silently.**
+
+Coinkite's
+[security advisory for COLDCARD seed generation](https://blog.coinkite.com/coldcard-mk3-seed-generation-warning/)
+(last updated 1 August 2026) discloses a flaw in their random number generator.
+In their own words, seeds generated on Mk4, Q and Mk5 before the fixed firmware
+"are also affected, with **about 72 bits of entropy rather than the expected 128
+bits**." Mk2 and Mk3 devices running firmware 4.0.1 (March 2021) through 4.1.9
+had their device-generated entropy compromised as well.
+
+> [!WARNING]
+> **This is an active advisory, not a history lesson.** If you own a COLDCARD,
+> stop reading this README and go read
+> [Coinkite's advisory](https://blog.coinkite.com/coldcard-mk3-seed-generation-warning/)
+> and their remediation steps first. Check it directly rather than relying on this
+> summary — details may have changed since this was written.
+
+Sit with what a drop from 128 bits to 72 bits means. It is not a 44% reduction in
+security — it is a reduction by a factor of 2⁵⁶, roughly 72 quadrillion times
+easier to brute force. 128 bits is beyond any conceivable attacker. 72 bits is in
+range of a well-resourced one. And **a wallet with a catastrophically weak seed
+looks exactly like a wallet with a strong one.** There is no error message, no
+warning, no symptom. It shows you 24 perfectly valid words and works normally,
+right up until someone else sweeps it.
+
+Three things about that advisory shaped this tool:
+
+1. **The users who were protected were the ones who supplied their own entropy.**
+   Coinkite's advisory states that funds from a seed generated on Mk2 or Mk3
+   firmware 4.0.1 through 4.1.9 "are at risk if the seed was created **without at
+   least 50 fair, independent, private dice rolls** and the funded wallet is not
+   protected by a strong, unique BIP-39 passphrase." Read that the other way
+   round: the people who rolled their own dice were the people who were fine.
+   That is the entire thesis of this program.
+2. **Firmware updates cannot fix a seed that has already been generated.** The
+   advisory is explicit: "Updating the firmware does not change or repair an
+   existing seed." Affected users had to generate a new seed and migrate their
+   funds. Entropy is a decision you make once, permanently, at the moment of
+   generation.
+3. **Nobody outside the vendor can see a sealed device's RNG.** This flaw existed
+   for a long time in a well-regarded, security-focused, largely open-source
+   product from a serious company. It was found and disclosed by the vendor
+   themselves — which is the system working as it should — but that is precisely
+   the point: **you could not have detected it yourself, and you cannot detect the
+   next one either.**
+
+> [!IMPORTANT]
+> **This project does not endorse or vouch for any hardware wallet — Coldcard,
+> Trezor, Ledger, or any other.**
+>
+> We are not in a position to tell you that any sealed device is safe, because we
+> cannot verify what its RNG actually did, and neither can you. The Coldcard
+> advisory is not evidence that one vendor is uniquely bad — Coinkite found and
+> disclosed the flaw themselves, and no funds are known to have been stolen. It is
+> evidence that **this class of failure reaches even the vendors who take security
+> seriously**, and that trusting any opaque RNG is a bet you are placing without
+> being able to see the odds.
+>
+> Treat that skepticism as applying to *this software too*. It is
+> [unaudited](#disclaimer). The difference is not that we ask for more trust — it
+> is that we ask for less: the code is small enough to read, and the entropy comes
+> from dice you watch with your own eyes.
+
 ## Should you use this?
 
-**A hardware wallet is the right default for most people.** A Coldcard, Trezor or
-Ledger generates keys inside a chip built to resist physical extraction, and the
-words never touch a general-purpose computer at all. That is a stronger position
-than any software running on a laptop, this tool included.
+**Use it if** you want entropy you can personally verify, if you want to
+supplement or replace a device RNG you cannot inspect, or if you want a phrase
+generated with no proprietary firmware anywhere in the path.
 
-Use this tool if you have a specific reason to distrust or supplement a device
-RNG, if you want entropy you can personally verify (dice you can watch), or if
-you want to generate a phrase with no proprietary firmware in the path. Several
-hardware wallets also accept dice entropy directly — if yours does, that is an
-excellent option and this tool is an alternative to it, not a replacement.
+**A note on hardware wallets that accept dice entropy directly:** several do, and
+if you already own one, feeding it your own dice is a genuinely good option — it
+keeps the key inside the device while still letting you contribute entropy you
+control. This tool is an alternative to that approach, not a replacement for it.
+Whichever you pick, the principle is the same: **do not let a sealed box be the
+sole source of your randomness.**
 
-Do **not** use this if you are going to run it on your everyday laptop while
-connected to the internet. That undoes essentially all of its value.
+**Do not use this** if you are going to run it on your everyday laptop while
+connected to the internet. That undoes essentially all of its value. And do not
+use it at all if you are not willing to read the source or have someone you trust
+read it — see the [Disclaimer](#disclaimer).
 
 ---
 
@@ -269,7 +341,9 @@ this is the wrong tool — use your hardware wallet's dice-entropy mode.
 **What this defends against**
 
 - A weak, biased, or backdoored operating-system RNG.
-- A weak or backdoored RNG in a hardware wallet, if you use this instead.
+- **A weak or silently broken RNG in a hardware wallet**, if you use this instead
+  of trusting the device — the exact failure mode of the
+  [COLDCARD advisory](#why-this-exists).
 - Any single entropy source being worse than you believed.
 - Accidental disclosure through pipes, files, logs, or the network — the tool
   writes to nothing but the terminal and refuses to run without one.
