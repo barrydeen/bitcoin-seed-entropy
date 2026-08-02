@@ -3,13 +3,15 @@
 **Build a 24-word Bitcoin seed phrase from entropy you generate yourself, offline.**
 
 Most wallets hand you 24 words and ask you to trust their random number
-generator. That trust has been misplaced before — most recently in COLDCARD
-hardware wallets, which for a period generated seeds with
-[about 72 bits of entropy instead of 128](#why-this-exists), silently and with no
-outward symptom. This tool lets you supply the randomness yourself — physical
-dice, keyboard timing, mouse movement, your own photographs — and mixes it with
-your operating system's generator so the result is at least as strong as
-whichever source is better.
+generator. In July 2026 that trust cost COLDCARD users
+[roughly $88 million](#why-this-exists): a firmware flaw dating to 2021 generated
+seeds with as little as 40 bits of entropy instead of 128, silently and with no
+outward symptom, and an attacker swept 1,196 addresses in 41 minutes.
+
+This tool lets you supply the randomness yourself — physical dice, keyboard
+timing, mouse movement, your own photographs — and mixes it with your operating
+system's generator so the result is at least as strong as whichever source is
+better.
 
 It requires **1024 bits** of collected entropy before it will produce a phrase.
 That is four times the 256 bits the phrase actually carries, which is deliberate:
@@ -45,13 +47,18 @@ cargo build --release
 >
 > Read **[Using it safely](#using-it-safely)** in full before generating a phrase
 > you intend to actually use. If you are not prepared to review the source
-> yourself, or to have someone you trust review it, use a hardware wallet instead.
+> yourself, or to have someone you trust review it, do not use this. **We do not
+> have a safer alternative to point you to** — see
+> [We do not recommend anything](#we-do-not-recommend-anything).
 
 ---
 
 ## Contents
 
 - [Why this exists](#why-this-exists)
+  - [What happened](#what-happened)
+  - [What it means](#what-it-means)
+  - [We do not recommend anything](#we-do-not-recommend-anything)
 - [Should you use this?](#should-you-use-this)
 - [Using it safely](#using-it-safely)
   - [1. Prepare the machine](#1-prepare-the-machine)
@@ -73,87 +80,112 @@ cargo build --release
 
 ## Why this exists
 
-**Bad entropy is not a hypothetical. It ships in real, respected hardware
-wallets, and it fails silently.**
-
-Coinkite's
-[security advisory for COLDCARD seed generation](https://blog.coinkite.com/coldcard-mk3-seed-generation-warning/)
-(last updated 1 August 2026) discloses a flaw in their random number generator.
-In their own words, seeds generated on Mk4, Q and Mk5 before the fixed firmware
-"are also affected, with **about 72 bits of entropy rather than the expected 128
-bits**." Mk2 and Mk3 devices running firmware 4.0.1 (March 2021) through 4.1.9
-had their device-generated entropy compromised as well.
+**Bad entropy is not a hypothetical. It shipped in one of the most respected
+hardware wallets on the market, went undetected for over four years, and in July
+2026 it was emptied out in under an hour.**
 
 > [!WARNING]
-> **This is an active advisory, not a history lesson.** If you own a COLDCARD,
-> stop reading this README and go read
-> [Coinkite's advisory](https://blog.coinkite.com/coldcard-mk3-seed-generation-warning/)
-> and their remediation steps first. Check it directly rather than relying on this
-> summary — details may have changed since this was written.
+> **If you own a COLDCARD, stop reading this README and act now.**
+> Read [Coinkite's advisory](https://blog.coinkite.com/coldcard-mk3-seed-generation-warning/)
+> and follow their remediation steps. Affected seeds cannot be repaired by a
+> firmware update — you need a new seed and you need to move your funds. This is
+> an unfolding situation and the figures below are already out of date.
 
-Sit with what a drop from 128 bits to 72 bits means. It is not a 44% reduction in
-security — it is a reduction by a factor of 2⁵⁶, roughly 72 quadrillion times
-easier to brute force. 128 bits is beyond any conceivable attacker. 72 bits is in
-range of a well-resourced one. And **a wallet with a catastrophically weak seed
-looks exactly like a wallet with a strong one.** There is no error message, no
-warning, no symptom. It shows you 24 perfectly valid words and works normally,
-right up until someone else sweeps it.
+### What happened
 
-Three things about that advisory shaped this tool:
+A firmware integration error introduced in **March 2021** left COLDCARD devices
+generating seeds from a deterministic software PRNG instead of the hardware
+random number generator. The production build set `MICROPY_HW_ENABLE_RNG` to
+zero, so seed generation silently fell back to MicroPython's Yasmarang PRNG,
+which was initialised from the chip's unique ID and timer registers and
+[collected no fresh entropy after initialisation](https://thehackernews.com/2026/08/coldcard-hardware-wallet-flaw-linked-to.html).
 
-1. **The users who were protected were the ones who supplied their own entropy.**
-   Coinkite's advisory states that funds from a seed generated on Mk2 or Mk3
-   firmware 4.0.1 through 4.1.9 "are at risk if the seed was created **without at
-   least 50 fair, independent, private dice rolls** and the funded wallet is not
-   protected by a strong, unique BIP-39 passphrase." Read that the other way
-   round: the people who rolled their own dice were the people who were fine.
-   That is the entire thesis of this program.
-2. **Firmware updates cannot fix a seed that has already been generated.** The
-   advisory is explicit: "Updating the firmware does not change or repair an
-   existing seed." Affected users had to generate a new seed and migrate their
-   funds. Entropy is a decision you make once, permanently, at the moment of
-   generation.
-3. **Nobody outside the vendor can see a sealed device's RNG.** This flaw existed
-   for a long time in a well-regarded, security-focused, largely open-source
-   product from a serious company. It was found and disclosed by the vendor
-   themselves — which is the system working as it should — but that is precisely
-   the point: **you could not have detected it yourself, and you cannot detect the
-   next one either.**
+The resulting seeds were not slightly weak. They were catastrophically weak:
+
+| Model | Firmware | Actual entropy | Expected |
+|---|---|---|---|
+| Mk3 | 4.0.1 – 4.1.9 | **~40 bits** | 128 bits |
+| Mk4 / Mk5 | before 5.6.0 | **~72 bits** | 128 bits |
+| Q | before 1.5.0Q | **~72 bits** | 128 bits |
+
+On **30 July 2026**, an attacker drained
+[1,196 addresses in 41 minutes](https://www.coindesk.com/tech/2026/07/31/major-bitcoin-wallet-flaw-drains-594-btc-in-25-minute-sweep) —
+1,082.65 BTC, about $70.2 million. Subsequent waves brought it to roughly
+**1,367 BTC (~$88.6 million) across some 4,585 addresses**, and
+[loss estimates have continued to climb](https://www.cryptotimes.io/2026/08/01/coldcard-hack-hits-75m-after-alleged-second-attack-wave-galaxy-research/).
+Those figures are current as of **2 August 2026** and are very likely already
+low. None of the stolen Bitcoin has moved.
+
+### What it means
+
+**40 bits is not a security margin. It is a rounding error.** A single machine
+can search a 40-bit keyspace. The attacker did not break Bitcoin, break SHA-256,
+or break the BIP-39 standard — all of that held perfectly. They simply
+regenerated the keys, because there were only ever a few hundred billion of them
+to try.
+
+And **a wallet with a catastrophically weak seed is indistinguishable from a
+strong one.** No error, no warning, no symptom. It shows you 24 valid words,
+passes its checksum, restores correctly, and works normally for years — right up
+until someone else sweeps it in a single 41-minute block of time.
+
+Three things about this shaped the tool:
+
+1. **The people who supplied their own entropy are the people who still have
+   their coins.** Coinkite's advisory states that Mk2/Mk3 funds "are at risk if
+   the seed was created **without at least 50 fair, independent, private dice
+   rolls** and the funded wallet is not protected by a strong, unique BIP-39
+   passphrase." Read it the other way round: dice were the difference between
+   losing everything and losing nothing. That is the entire thesis of this
+   program.
+2. **A firmware update cannot repair a seed that already exists.** Coinkite are
+   explicit: "Updating the firmware does not change or repair an existing seed."
+   Entropy is a decision made once, permanently, in the instant of generation. By
+   the time a flaw is public it is far too late to patch your way out.
+3. **Nobody outside could see it.** This was a serious, security-focused,
+   substantially open-source product from a well-regarded company — and the defect
+   still sat there for over four years. It was a single build flag. **You could
+   not have detected it, and you cannot detect the next one either.**
+
+### We do not recommend anything
 
 > [!IMPORTANT]
-> **This project does not endorse or vouch for any hardware wallet — Coldcard,
-> Trezor, Ledger, or any other.**
+> **This project does not recommend, endorse, or vouch for any wallet, any
+> hardware device, or any vendor. That includes Coldcard. It also includes this
+> software.**
 >
-> We are not in a position to tell you that any sealed device is safe, because we
-> cannot verify what its RNG actually did, and neither can you. The Coldcard
-> advisory is not evidence that one vendor is uniquely bad — Coinkite found and
-> disclosed the flaw themselves, and no funds are known to have been stolen. It is
-> evidence that **this class of failure reaches even the vendors who take security
-> seriously**, and that trusting any opaque RNG is a bet you are placing without
-> being able to see the odds.
+> We are not in a position to tell you that any sealed device is safe, because
+> nobody outside the vendor can verify what its RNG actually did — and as of July
+> 2026 we have an $88 million demonstration of what that costs. We are also not in
+> a position to tell you the next vendor is any better. We do not know. Anyone who
+> claims otherwise is guessing, and the guess is being made with your money.
 >
-> Treat that skepticism as applying to *this software too*. It is
-> [unaudited](#disclaimer). The difference is not that we ask for more trust — it
-> is that we ask for less: the code is small enough to read, and the entropy comes
+> **Apply exactly that skepticism to this program.** It is
+> [unaudited](#disclaimer), it has had no third-party review, and it may well
+> contain its own defects. We are not asking you to trust it more than a Coldcard.
+> We are asking you to trust it *less* — and pointing out that you are able to,
+> because the code is under 900 lines you can read yourself and the entropy comes
 > from dice you watch with your own eyes.
+>
+> The lesson of July 2026 is not "use a different product." It is **stop
+> outsourcing your randomness to anything you cannot inspect.**
 
 ## Should you use this?
 
-**Use it if** you want entropy you can personally verify, if you want to
-supplement or replace a device RNG you cannot inspect, or if you want a phrase
+**Consider it if** you want entropy you can personally verify, if you want to
+supplement or replace an RNG you cannot inspect, or if you want a phrase
 generated with no proprietary firmware anywhere in the path.
 
-**A note on hardware wallets that accept dice entropy directly:** several do, and
-if you already own one, feeding it your own dice is a genuinely good option — it
-keeps the key inside the device while still letting you contribute entropy you
-control. This tool is an alternative to that approach, not a replacement for it.
-Whichever you pick, the principle is the same: **do not let a sealed box be the
-sole source of your randomness.**
+**If your hardware wallet accepts dice entropy directly**, that is another way to
+get the same property, and it keeps the key inside the device. We are not going to
+tell you which is better for you. The principle is what matters, and it is the
+same either way: **do not let anything you cannot inspect be the sole source of
+your randomness.**
 
 **Do not use this** if you are going to run it on your everyday laptop while
-connected to the internet. That undoes essentially all of its value. And do not
-use it at all if you are not willing to read the source or have someone you trust
-read it — see the [Disclaimer](#disclaimer).
+connected to the internet — that undoes essentially all of its value. And do not
+use it at all if you are not willing to read the source, or have someone you
+trust read it, first. See the [Disclaimer](#disclaimer).
 
 ---
 
@@ -331,8 +363,9 @@ two, not the worse. You do not have to decide which one to trust.
 
 The consequence worth stating plainly: **the phrase is not reproducible from your
 dice rolls.** Re-entering the same rolls will not regenerate it. This is
-intentional. If you want a phrase derived from dice alone so you can recreate it,
-this is the wrong tool — use your hardware wallet's dice-entropy mode.
+intentional. If you specifically want a phrase derived from dice alone so that you
+can recreate it deterministically, this is the wrong tool and you will need to
+look elsewhere — we are not going to point you at a particular one.
 
 ---
 
